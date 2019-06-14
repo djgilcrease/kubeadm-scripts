@@ -3,19 +3,19 @@ set -e
 
 export user=$(whoami)
 
-sudo mkdir -p /opt/f5/{registry,controller/pg/data}
-sudo chmod g+s /opt/f5
+sudo mkdir -p /opt/k8s/{registry,controller/pg/data}
+sudo chmod g+s /opt/k8s
 
-sudo setfacl -m d:g::rwX /opt/f5
-sudo setfacl -m g::rwX /opt/f5
-sudo setfacl -m d:u::rwX /opt/f5
-sudo setfacl -m u::rwX /opt/f5
-sudo setfacl -m d:u:${user}:rwX /opt/f5
-sudo setfacl -m u:${user}:rwX /opt/f5
-sudo setfacl -m d:o::- /opt/f5
-sudo setfacl -m o::- /opt/f5
+sudo setfacl -m d:g::rwX /opt/k8s
+sudo setfacl -m g::rwX /opt/k8s
+sudo setfacl -m d:u::rwX /opt/k8s
+sudo setfacl -m u::rwX /opt/k8s
+sudo setfacl -m d:u:${user}:rwX /opt/k8s
+sudo setfacl -m u:${user}:rwX /opt/k8s
+sudo setfacl -m d:o::- /opt/k8s
+sudo setfacl -m o::- /opt/k8s
 
-cat <<'EOF' >"/opt/f5/node-prep.sh"
+cat <<'EOF' >"/opt/k8s/node-prep.sh"
 #!/bin/bash
 
 function prepareNode() {
@@ -46,8 +46,8 @@ DOCKEREOF
 export -f prepareNode
 EOF
 
-sudo chmod +x /opt/f5/node-prep.sh
-source /opt/f5/node-prep.sh
+sudo chmod +x /opt/k8s/node-prep.sh
+source /opt/k8s/node-prep.sh
 sudo su -c "$(declare -f prepareNode); prepareNode"
 
 export HOSTNAME=$(hostname)
@@ -57,7 +57,7 @@ if [ "${KUBE_LB_HOST}" == "" ]; then
   export KUBE_LB_HOST=${IPS[0]}
 fi
 
-cat <<EOF >"/opt/f5/kubeadm-config.yaml"
+cat <<EOF >"/opt/k8s/kubeadm-config.yaml"
 apiVersion: kubeadm.k8s.io/v1beta1
 kind: ClusterConfiguration
 kubernetesVersion: 1.14.2
@@ -72,12 +72,12 @@ apiServer:
 EOF
 
 for ip in ${IPS[@]}; do
-cat <<EOF >>"/opt/f5/kubeadm-config.yaml"
+cat <<EOF >>"/opt/k8s/kubeadm-config.yaml"
   - "${ip}"
 EOF
 done
 
-cat <<EOF >>"/opt/f5/kubeadm-config.yaml"
+cat <<EOF >>"/opt/k8s/kubeadm-config.yaml"
   - "${KUBE_LB_HOST}"
 controlPlaneEndpoint: "${KUBE_LB_HOST}:6443"
 EOF
@@ -86,17 +86,17 @@ sudo kubeadm init --node-name ${HOSTNAME} --skip-token-print --skip-certificate-
 mkdir -p ${HOME}/.kube
 sudo cp -f /etc/kubernetes/admin.conf ${HOME}/.kube/config
 sudo chown -R ${user}:${user} ${HOME}/.kube
-kubectl apply -f https://artifactory.f5net.com:443/artifactory/blue-dev/kube-flannel.yml
+kubectl apply -f https://raw.githubusercontent.com/djgilcrease/kubeadm-scripts/master/kube-flannel.yml
 kubectl taint nodes ${HOSTNAME} node-role.kubernetes.io/master-
 kubectl wait --for=condition=ready node ${HOSTNAME} --timeout=120s
 
 echo 'k8s is running in single-machine mode.'
 echo
 echo 'To add additional control nodes run'
-echo '/opt/f5/new-controller-join.sh $(whoami) <NEW_CONTROLER_IP> $(kubeadm token create --ttl 3m)'
+echo '/opt/k8s/new-controller-join.sh $(whoami) <NEW_CONTROLER_IP> $(kubeadm token create --ttl 3m)'
 echo
 echo 'To add additional control nodes run'
-echo '/opt/f5/new-worker-join.sh $(whoami) <NEW_WORKER_IP> $(kubeadm token create --ttl 3m)'
+echo '/opt/k8s/new-worker-join.sh $(whoami) <NEW_WORKER_IP> $(kubeadm token create --ttl 3m)'
 echo
 echo 'Adding additional nodes will remove the single-machine mode.'
 echo
@@ -106,12 +106,12 @@ echo
 ################################
 export KUBE_DISCOVERY_TOKEN_HASH=$(sudo openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //')
 
-cat <<EOF >"/opt/f5/node.env"
+cat <<EOF >"/opt/k8s/node.env"
 export KUBE_LB_HOST=${KUBE_LB_HOST}
 export KUBE_DISCOVERY_TOKEN_HASH=${KUBE_DISCOVERY_TOKEN_HASH}
 EOF
 
-cat <<'EOF' >"/opt/f5/new-controller-join.sh"
+cat <<'EOF' >"/opt/k8s/new-controller-join.sh"
 #!/bin/bash
 
 user=$1
@@ -137,24 +137,24 @@ scp /tmp/ncn/pki/etcd/ca.key ${user}@${host}:etcd-ca.key
 scp /tmp/ncn/admin.conf ${user}@${host}:
 sudo rm -rf /tmp/ncn
 
-scp /opt/f5/node-prep.sh ${user}@${host}:
-scp /opt/f5/new-worker-join.sh ${user}@${host}:
-scp /opt/f5/new-controller-join.sh ${user}@${host}:
-scp /opt/f5/node.env ${user}@${host}:
-ssh ${user}@${host} "sudo mkdir -p /opt/f5/"
-ssh ${user}@${host} "sudo setfacl -m d:g::rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m g::rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m d:u::rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m u::rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m d:u:${user}:rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m u:${user}:rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m d:o::- /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m o::- /opt/f5"
-ssh ${user}@${host} "sudo mv /home/${user}/node-prep.sh /opt/f5/"
-ssh ${user}@${host} "sudo mv /home/${user}/node.env /opt/f5/"
-ssh ${user}@${host} "sudo mv /home/${user}/new-worker-join.sh /opt/f5/"
-ssh ${user}@${host} "sudo mv /home/${user}/new-controller-join.sh /opt/f5/"
-ssh ${user}@${host} 'source /opt/f5/node-prep.sh && sudo su -c "$(declare -f prepareNode); prepareNode"'
+scp /opt/k8s/node-prep.sh ${user}@${host}:
+scp /opt/k8s/new-worker-join.sh ${user}@${host}:
+scp /opt/k8s/new-controller-join.sh ${user}@${host}:
+scp /opt/k8s/node.env ${user}@${host}:
+ssh ${user}@${host} "sudo mkdir -p /opt/k8s/"
+ssh ${user}@${host} "sudo setfacl -m d:g::rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m g::rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m d:u::rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m u::rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m d:u:${user}:rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m u:${user}:rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m d:o::- /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m o::- /opt/k8s"
+ssh ${user}@${host} "sudo mv /home/${user}/node-prep.sh /opt/k8s/"
+ssh ${user}@${host} "sudo mv /home/${user}/node.env /opt/k8s/"
+ssh ${user}@${host} "sudo mv /home/${user}/new-worker-join.sh /opt/k8s/"
+ssh ${user}@${host} "sudo mv /home/${user}/new-controller-join.sh /opt/k8s/"
+ssh ${user}@${host} 'source /opt/k8s/node-prep.sh && sudo su -c "$(declare -f prepareNode); prepareNode"'
 ssh ${user}@${host} "sudo mkdir -p /etc/kubernetes/pki/etcd"
 ssh ${user}@${host} "sudo mv /home/${user}/ca.crt /etc/kubernetes/pki/"
 ssh ${user}@${host} "sudo mv /home/${user}/ca.key /etc/kubernetes/pki/"
@@ -165,18 +165,18 @@ ssh ${user}@${host} "sudo mv /home/${user}/front-proxy-ca.key /etc/kubernetes/pk
 ssh ${user}@${host} "sudo mv /home/${user}/etcd-ca.crt /etc/kubernetes/pki/etcd/ca.crt"
 ssh ${user}@${host} "sudo mv /home/${user}/etcd-ca.key /etc/kubernetes/pki/etcd/ca.key"
 ssh ${user}@${host} "sudo chown -R root:root /etc/kubernetes/"
-ssh ${user}@${host} "echo 'export token=${token}' >> /opt/f5/node.env"
-ssh ${user}@${host} 'source /opt/f5/node.env && sudo kubeadm join ${KUBE_LB_HOST}:6443 --token ${token} --discovery-token-ca-cert-hash sha256:${KUBE_DISCOVERY_TOKEN_HASH} --experimental-control-plane'
-ssh ${user}@${host} "sed -i '$ d' /opt/f5/node.env"
+ssh ${user}@${host} "echo 'export token=${token}' >> /opt/k8s/node.env"
+ssh ${user}@${host} 'source /opt/k8s/node.env && sudo kubeadm join ${KUBE_LB_HOST}:6443 --token ${token} --discovery-token-ca-cert-hash sha256:${KUBE_DISCOVERY_TOKEN_HASH} --experimental-control-plane'
+ssh ${user}@${host} "sed -i '$ d' /opt/k8s/node.env"
 ssh ${user}@${host} "mkdir -p $HOME/.kube"
 ssh ${user}@${host} "sudo cp -f /etc/kubernetes/admin.conf $HOME/.kube/config"
 ssh ${user}@${host} "sudo chown ${user}:${user} $HOME/.kube/config"
 ssh ${user}@${host} "kubectl wait --for=condition=ready node $(hostname) --timeout=120s"
 EOF
 
-sudo chmod +x /opt/f5/new-controller-join.sh
+sudo chmod +x /opt/k8s/new-controller-join.sh
 
-cat <<'EOF' >"/opt/f5/new-worker-join.sh"
+cat <<'EOF' >"/opt/k8s/new-worker-join.sh"
 #!/bin/bash
 
 user=$1
@@ -191,26 +191,26 @@ mkdir -p /tmp/nwn/
 sudo cp /etc/kubernetes/admin.conf /tmp/nwn/.
 sudo chown -R ${user}:${user} /tmp/nwn/
 scp /tmp/nwn/admin.conf ${user}@${host}:
-scp /opt/f5/node-prep.sh ${user}@${host}:
-scp /opt/f5/node.env ${user}@${host}:
+scp /opt/k8s/node-prep.sh ${user}@${host}:
+scp /opt/k8s/node.env ${user}@${host}:
 sudo rm -rf /tmp/nwn
 
-ssh ${user}@${host} "sudo mkdir -p /opt/f5/"
-ssh ${user}@${host} "sudo setfacl -m d:g::rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m g::rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m d:u::rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m u::rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m d:u:${user}:rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m u:${user}:rwX /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m d:o::- /opt/f5"
-ssh ${user}@${host} "sudo setfacl -m o::- /opt/f5"
-ssh ${user}@${host} "sudo mv /home/${user}/node-prep.sh /opt/f5/"
-ssh ${user}@${host} "sudo mv /home/${user}/node.env /opt/f5/"
-ssh ${user}@${host} 'source /opt/f5/node-prep.sh && sudo su -c "$(declare -f prepareNode); prepareNode"'
-ssh ${user}@${host} "echo 'export token=${token}' >> /opt/f5/node.env"
-ssh ${user}@${host} 'source /opt/f5/node.env && sudo kubeadm join ${KUBE_LB_HOST}:6443 --token ${token} --discovery-token-ca-cert-hash sha256:${KUBE_DISCOVERY_TOKEN_HASH}'
+ssh ${user}@${host} "sudo mkdir -p /opt/k8s/"
+ssh ${user}@${host} "sudo setfacl -m d:g::rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m g::rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m d:u::rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m u::rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m d:u:${user}:rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m u:${user}:rwX /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m d:o::- /opt/k8s"
+ssh ${user}@${host} "sudo setfacl -m o::- /opt/k8s"
+ssh ${user}@${host} "sudo mv /home/${user}/node-prep.sh /opt/k8s/"
+ssh ${user}@${host} "sudo mv /home/${user}/node.env /opt/k8s/"
+ssh ${user}@${host} 'source /opt/k8s/node-prep.sh && sudo su -c "$(declare -f prepareNode); prepareNode"'
+ssh ${user}@${host} "echo 'export token=${token}' >> /opt/k8s/node.env"
+ssh ${user}@${host} 'source /opt/k8s/node.env && sudo kubeadm join ${KUBE_LB_HOST}:6443 --token ${token} --discovery-token-ca-cert-hash sha256:${KUBE_DISCOVERY_TOKEN_HASH}'
 ssh ${user}@${host} "sudo mv /home/${user}/admin.conf $HOME/.kube/config"
-ssh ${user}@${host} "sudo rm -rf /opt/f5"
+ssh ${user}@${host} "sudo rm -rf /opt/k8s"
 EOF
 
-sudo chmod +x /opt/f5/new-worker-join.sh
+sudo chmod +x /opt/k8s/new-worker-join.sh
