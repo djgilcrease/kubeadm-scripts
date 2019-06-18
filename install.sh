@@ -82,7 +82,7 @@ cat <<EOF >>"/opt/k8s/kubeadm-config.yaml"
 controlPlaneEndpoint: "${KUBE_LB_HOST}:6443"
 EOF
 
-sudo kubeadm init --node-name ${HOSTNAME} --skip-token-print --skip-certificate-key-print --config /opt/f5/kubeadm-config.yaml
+sudo kubeadm init --node-name ${HOSTNAME} --skip-token-print --skip-certificate-key-print --config /opt/k8s/kubeadm-config.yaml
 mkdir -p ${HOME}/.kube
 sudo cp -f /etc/kubernetes/admin.conf ${HOME}/.kube/config
 sudo chown -R ${user}:${user} ${HOME}/.kube
