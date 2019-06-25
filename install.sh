@@ -60,7 +60,6 @@ fi
 cat <<EOF >"/opt/k8s/kubeadm-config.yaml"
 apiVersion: kubeadm.k8s.io/v1beta1
 kind: ClusterConfiguration
-kubernetesVersion: 1.14.2
 networking:
   serviceSubnet: 10.0.0.0/12
   podSubnet: 10.16.0.0/12
