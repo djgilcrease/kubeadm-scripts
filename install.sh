@@ -67,7 +67,7 @@ apiServer:
   extraArgs:
     service-account-issuer: kubernetes.default.svc
     service-account-signing-key-file: /etc/kubernetes/pki/sa.key
-    service-account-api-audiences: true
+    service-account-api-audiences: 'true'
   certSANs:
   - 127.0.0.1
   - localhost
